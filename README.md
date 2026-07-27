@@ -217,7 +217,7 @@ docker compose up rtabmap-vo
 ```
 ---
 
-## 9. Estructura
+## 6. Estructura
 
 ```
 avular_slam/
