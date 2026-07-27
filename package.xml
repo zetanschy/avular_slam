@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>avular_slam</name>
+  <version>1.0.0</version>
+  <description>
+    Clase 5 - SLAM. Tres algoritmos de SLAM sobre el Avular Origin One de la
+    clase 3: 2D con slam_toolbox, 3D con GLIM y visual con RTAB-Map, en un
+    mundo con circuito cerrado para ver el cierre de bucle.
+  </description>
+  <maintainer email="student@example.com">Student</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>xacro</depend>
+  <depend>rviz2</depend>
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>tf2_ros</depend>
+  <!-- El robot: repositorio avular_origin_description (clase 3) -->
+  <depend>origin_one_description</depend>
+
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>nav2_map_server</exec_depend>
+  <exec_depend>teleop_twist_keyboard</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

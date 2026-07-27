@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Lo genera docker/glim/preparar_config.sh (se extrae de la imagen Docker)
+docker/glim/config/
+
+# Lo crean los contenedores al montar los volumenes
+docker/glim/dump/
+docker/rtabmap/db/
+
+# Artefactos de colcon, por si alguien compila dentro del paquete
+build/
+install/
+log/
+
+# Mapas guardados durante las practicas
+mapa_*.pgm
+mapa_*.yaml

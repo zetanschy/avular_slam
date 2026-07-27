@@ -1,0 +1,205 @@
+# ===========================================================================
+# Clase 5 - SLAM: los algoritmos que NO estan en apt, en contenedores.
+#
+# Idea: Gazebo, el robot y RViz corren en VUESTRA maquina (como siempre).
+# Los contenedores solo traen el algoritmo de SLAM y se conectan por DDS al
+# mismo grafo ROS 2. Por eso llevan network_mode: host e ipc: host.
+#
+#   ros2 topic list    <- desde el host veis los topics del contenedor
+#
+# ANTES DE NADA, una sola vez por sesion, para que los contenedores puedan
+# abrir ventanas (GLIM y RTAB-Map tienen visor propio):
+#
+#   xhost +local:docker
+#
+# USO
+#   cd docker
+#   ./glim/preparar_config.sh           # solo la primera vez
+#   docker compose up glim              # SLAM 3D LiDAR-inercial
+#   docker compose up rtabmap           # SLAM visual RGB-D
+#   docker compose up kiss-icp          # odometria LiDAR pura (comparacion)
+#
+# Para parar: Ctrl-C, y si queda algo:  docker compose down
+# ===========================================================================
+
+x-comun: &comun
+  # host: comparte la red y la memoria compartida con el host, que es como
+  # DDS descubre nodos. Sin esto el contenedor no ve /scan ni /imu.
+  network_mode: host
+  ipc: host
+  pid: host
+  stdin_open: true
+  tty: true
+  environment: &entorno
+    DISPLAY: ${DISPLAY}
+    QT_X11_NO_MITSHM: 1
+    # Si en clase cambiais de dominio para no interferir entre grupos,
+    # exportad ROS_DOMAIN_ID antes de docker compose up.
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+  volumes:
+    - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+services:
+
+  # -------------------------------------------------------------------
+  # SLAM 3D: GLIM (LiDAR + IMU, grafo de factores, cierre de bucle)
+  # Version CPU: ~2.4 GB, funciona en cualquier portatil.
+  #
+  # OJO: GLIM publica el arbol completo map -> odom -> base_link, o sea que
+  # HACE DE ODOMETRIA. Hay que lanzar la simulacion sin la TF de Gazebo:
+  #
+  #     ros2 launch avular_slam simulation.launch.py odom_tf:=false
+  #
+  # Si no, base_link tiene dos padres y el arbol TF se rompe.
+  # -------------------------------------------------------------------
+  glim:
+    <<: *comun
+    image: koide3/glim_ros2:humble
+    container_name: glim
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./glim/config:/glim/config:ro
+      - ./glim/dump:/glim/dump
+    command: >
+      ros2 run glim_ros glim_rosnode --ros-args
+      -p config_path:=/glim/config
+      -p use_sim_time:=true
+
+  # -------------------------------------------------------------------
+  # Lo mismo pero con CUDA. Mucho mas rapido y con mejor mapeo global.
+  # Requiere nvidia-container-toolkit instalado en el host y editar
+  # glim/config/config.json para poner los *_gpu.json
+  # (o pasarle la imagen cuda a preparar_config.sh, que ya lo deja hecho).
+  # -------------------------------------------------------------------
+  glim-gpu:
+    <<: *comun
+    image: koide3/glim_ros2:humble_cuda12.2
+    container_name: glim_gpu
+    environment:
+      <<: *entorno
+      NVIDIA_DRIVER_CAPABILITIES: all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./glim/config:/glim/config:ro
+      - ./glim/dump:/glim/dump
+    command: >
+      ros2 run glim_ros glim_rosnode --ros-args
+      -p config_path:=/glim/config
+      -p use_sim_time:=true
+
+  # -------------------------------------------------------------------
+  # SLAM VISUAL: RTAB-Map RGB-D.
+  #
+  # Variante 1 (esta): la odometria se la damos nosotros (/robot/odom, las
+  # ruedas) y RTAB-Map solo hace el mapa y el cierre de bucle visual. Es la
+  # que mejor funciona y la que hay que ensenar primero.
+  #
+  # Sobre --RGBD/OptimizeMaxError 0:
+  # RTAB-Map, por defecto, RECHAZA un cierre de bucle si al optimizar el
+  # grafo el error resultante es mas de 3 veces la desviacion tipica
+  # esperada. Es un filtro anti-falsos-positivos muy razonable... pero la
+  # odometria del skid-steer deriva tanto (10-20 m en dos vueltas) que la
+  # correccion necesaria dispara ese filtro y los cierres BUENOS tambien se
+  # descartan. En el log se ve tal cual:
+  #
+  #   Loop closure 100->3 rejected!  ... maximum graph error ratio 12.27
+  #
+  # Con 0 se desactiva el filtro y los cierres se aplican. Merece la pena
+  # ensenarlo primero SIN el flag: es un ejemplo perfecto de un SLAM que
+  # "no funciona" y en realidad esta haciendo lo correcto con datos malos.
+  # -------------------------------------------------------------------
+  rtabmap:
+    <<: *comun
+    image: introlab3it/rtabmap_ros:humble
+    container_name: rtabmap
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./rtabmap/db:/root/.ros
+    command: >
+      ros2 launch rtabmap_launch rtabmap.launch.py
+      rgb_topic:=/robot/camera/color/image_raw
+      depth_topic:=/robot/camera/depth/image_raw
+      camera_info_topic:=/robot/camera/color/camera_info
+      frame_id:=base_link
+      odom_topic:=/robot/odom
+      visual_odometry:=false
+      approx_sync:=true
+      approx_sync_max_interval:=0.04
+      qos:=1
+      use_sim_time:=true
+      rtabmap_viz:=true
+      rviz:=false
+      rtabmap_args:="--delete_db_on_start --RGBD/OptimizeMaxError 0"
+
+  # -------------------------------------------------------------------
+  # Variante 2: ODOMETRIA VISUAL. Aqui RTAB-Map estima el movimiento SOLO
+  # con la camara, sin tocar las ruedas.
+  #
+  # OJO: esta variante publica ella misma la TF odom -> base_link, asi que
+  # hay que lanzar la simulacion SIN el puente de TF de Gazebo:
+  #
+  #     ros2 launch avular_slam simulation.launch.py odom_tf:=false
+  #
+  # Si no, dos nodos publican el mismo padre->hijo y el arbol TF se rompe.
+  # -------------------------------------------------------------------
+  rtabmap-vo:
+    <<: *comun
+    image: introlab3it/rtabmap_ros:humble
+    container_name: rtabmap_vo
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ./rtabmap/db:/root/.ros
+    command: >
+      ros2 launch rtabmap_launch rtabmap.launch.py
+      rgb_topic:=/robot/camera/color/image_raw
+      depth_topic:=/robot/camera/depth/image_raw
+      camera_info_topic:=/robot/camera/color/camera_info
+      frame_id:=base_link
+      visual_odometry:=true
+      approx_sync:=true
+      approx_sync_max_interval:=0.04
+      qos:=1
+      use_sim_time:=true
+      rtabmap_viz:=true
+      rviz:=false
+      rtabmap_args:="--delete_db_on_start --RGBD/OptimizeMaxError 0"
+
+  # -------------------------------------------------------------------
+  # KISS-ICP: odometria LiDAR "pelada" (solo ICP, sin IMU, sin grafo,
+  # sin cierre de bucle). Se construye desde el codigo fuente.
+  #
+  #   docker compose build kiss-icp     (tarda unos minutos la 1a vez)
+  #
+  # Es la comparacion mas didactica de la clase: la MISMA nube de puntos
+  # con y sin backend. KISS-ICP deriva y no cierra nunca; GLIM cierra.
+  # -------------------------------------------------------------------
+  kiss-icp:
+    <<: *comun
+    build:
+      context: ./kiss_icp
+    image: clase5/kiss-icp:humble
+    container_name: kiss_icp
+    # Los argumentos son los de ESTA version de kiss_icp (comprobados con
+    # grep en su odometry.launch.py dentro de la imagen): el frame de salida
+    # se llama lidar_odom_frame, no odom_frame.
+    #
+    # publish_odom_tf:=false a proposito: KISS-ICP publicaria
+    # kiss_odom -> base_link y se pelearia con la TF de Gazebo. Aqui solo nos
+    # interesa su TRAYECTORIA (/kiss/odometry) para ponerla al lado de la de
+    # GLIM y ver cual deriva.
+    command: >
+      ros2 launch kiss_icp odometry.launch.py
+      topic:=/robot/lidar/points
+      base_frame:=base_link
+      lidar_odom_frame:=kiss_odom
+      publish_odom_tf:=false
+      use_sim_time:=true
+      visualize:=false

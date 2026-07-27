@@ -1,0 +1,4 @@
+# Generados por preparar_config.sh y por los contenedores
+glim/config/
+glim/dump/
+rtabmap/db/

@@ -1,0 +1,102 @@
+# ---------------------------------------------------------------------------
+# Puente Gazebo <-> ROS 2 para la clase de SLAM, con el Avular Origin One.
+#
+# La simulacion de Avular trae su propio puente
+# (origin_one_gazebo/config/gazebo_ros_bridge_topics.yaml) pero NO puentea el
+# LiDAR 2D ni la IMU, que son justo dos de las tres cosas que necesitamos hoy.
+# Este fichero los anade y deja todo con nombres comodos.
+#
+#   direction: GZ_TO_ROS   Gazebo publica, ROS escucha (sensores)
+#              ROS_TO_GZ   ROS publica, Gazebo escucha (cmd_vel)
+#
+# Los tipos van como "ignition.msgs.*" porque este ros_gz esta compilado
+# contra Fortress.
+# ---------------------------------------------------------------------------
+
+# --- reloj: todos los nodos con use_sim_time:=true -------------------------
+- ros_topic_name: "/clock"
+  gz_topic_name: "/clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "ignition.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# --- control y odometria ---------------------------------------------------
+- ros_topic_name: "/robot/cmd_vel"
+  gz_topic_name: "/robot/cmd_vel"
+  ros_type_name: "geometry_msgs/msg/Twist"
+  gz_type_name: "ignition.msgs.Twist"
+  direction: ROS_TO_GZ
+
+- ros_topic_name: "/robot/odom"
+  gz_topic_name: "/robot/odom"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "ignition.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/robot/joint_states"
+  gz_topic_name: "/robot/joint_states"
+  ros_type_name: "sensor_msgs/msg/JointState"
+  gz_type_name: "ignition.msgs.Model"
+  direction: GZ_TO_ROS
+
+# Odometria de VERDAD: la inyecta simulation.launch.py en el URDF.
+# Sirve para medir cuanto se equivocan la odometria y el SLAM (ver la tarea).
+# Frames propios (mundo / base_verdad) para no tocar el arbol TF real.
+- ros_topic_name: "/odom_verdad"
+  gz_topic_name: "/odom_verdad"
+  ros_type_name: "nav_msgs/msg/Odometry"
+  gz_type_name: "ignition.msgs.Odometry"
+  direction: GZ_TO_ROS
+
+# --- LiDAR 2D -> slam_toolbox ----------------------------------------------
+# NO viene en el puente de Avular. El sensor existe en el URDF (scan_link).
+- ros_topic_name: "/scan"
+  gz_topic_name: "/scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "ignition.msgs.LaserScan"
+  direction: GZ_TO_ROS
+
+# --- LiDAR 3D (Ouster OS1-32) -> GLIM / KISS-ICP ---------------------------
+- ros_topic_name: "/robot/lidar/points"
+  gz_topic_name: "/robot/lidar/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "ignition.msgs.PointCloudPacked"
+  direction: GZ_TO_ROS
+
+# --- IMU -> GLIM -----------------------------------------------------------
+# Tampoco viene en el puente de Avular.
+- ros_topic_name: "/imu"
+  gz_topic_name: "/imu"
+  ros_type_name: "sensor_msgs/msg/Imu"
+  gz_type_name: "ignition.msgs.IMU"
+  direction: GZ_TO_ROS
+
+# --- Camara RGB-D (RealSense D435) -> RTAB-Map -----------------------------
+# El camera_info de este robot SI es correcto (554.25 / 320.5 / 240.5), porque
+# su URDF declara <lens><intrinsics> explicitamente. Si no se declaran,
+# Gazebo Fortress publica los intrinsecos por defecto (320x240, 60 grados)
+# aunque la imagen salga a 640x480, y el SLAM visual construye el mapa con la
+# escala mal sin dar ningun error. Merece la pena verlo en clase:
+#   ros2 topic echo /robot/camera/color/camera_info --once
+- ros_topic_name: "/robot/camera/color/image_raw"
+  gz_topic_name: "/robot/camera/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/robot/camera/depth/image_raw"
+  gz_topic_name: "/robot/camera/depth_image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "ignition.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/robot/camera/color/camera_info"
+  gz_topic_name: "/robot/camera/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "ignition.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# NO puenteamos /robot/camera/points a proposito: Gazebo la publica en SU
+# convencion (X adelante) pero etiquetada con el frame optico (Z adelante),
+# asi que saldria girada en RViz. RTAB-Map no la necesita: reconstruye la
+# nube a partir de rgb + depth + camera_info.

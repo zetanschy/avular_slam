@@ -1,0 +1,97 @@
+{
+  "_comentario": [
+    "Cambios que aplicamos sobre la configuracion por defecto de GLIM.",
+    "preparar_config.sh saca los .json originales de la imagen Docker y",
+    "les mezcla esto encima, para no tener que mantener copias enteras",
+    "que se quedarian desfasadas al actualizar la imagen.",
+    "Cada clave de primer nivel es un fichero de config de GLIM."
+  ],
+
+  "config.json": {
+    "global": {
+      "_nota": "cpu = funciona con la imagen koide3/glim_ros2:humble. Si usais la imagen _cuda12.2, cambiad los tres a *_gpu.json (mucho mas rapido).",
+      "config_odometry": "config_odometry_cpu.json",
+      "config_sub_mapping": "config_sub_mapping_cpu.json",
+      "config_global_mapping": "config_global_mapping_cpu.json"
+    }
+  },
+
+  "config_ros.json": {
+    "glim_ros": {
+      "_nota_topics": "Los de nuestro robot simulado.",
+      "points_topic": "/robot/lidar/points",
+      "imu_topic": "/imu",
+
+      "_nota_frames": [
+        "GLIM publica el arbol map -> odom -> base, o sea que HACE DE",
+        "ODOMETRIA: sustituye a la de las ruedas, no se suma a ella.",
+        "Por eso la demo de GLIM se lanza con odom_tf:=false, para que",
+        "Gazebo NO publique tambien odom -> base_link. Si lo publican los",
+        "dos, base_link tendria dos padres y el arbol TF se rompe.",
+        "",
+        "Ojo tambien con base_frame_id: tiene que ser un frame que EXISTA",
+        "en el arbol y sea alcanzable desde el frame de la IMU, porque GLIM",
+        "busca la transformada imu_link -> base para colocar el robot. Si se",
+        "le pone un nombre inventado, el visor se llena de avisos",
+        "\"passed to lookupTransform argument source_frame does not exist\"."
+      ],
+      "map_frame_id": "map",
+      "odom_frame_id": "odom",
+      "base_frame_id": "base_link",
+      "publish_imu2lidar": false,
+
+      "_nota_viewer": "standard_viewer es la ventana propia de GLIM (necesita X11). Quitadla si ejecutais sin pantalla.",
+      "extension_modules": [
+        "libmemory_monitor.so",
+        "libstandard_viewer.so",
+        "librviz_viewer.so"
+      ]
+    }
+  },
+
+  "config_sensors.json": {
+    "sensors": {
+      "_nota_extrinseca": [
+        "T_lidar_imu = pose de la IMU vista desde el LiDAR [x y z qx qy qz qw].",
+        "Sacada del URDF del Origin One (base_link -> os_lidar y base_link ->",
+        "imu_link): la IMU esta 40 cm por detras, 16 cm por debajo y ADEMAS",
+        "girada 135 grados en yaw respecto al LiDAR. Eso ultimo es lo que",
+        "mas duele si se pone mal: GLIM interpreta los giros al reves y",
+        "diverge en cuanto el robot rota. Es un buen ejercicio: ponedlo a",
+        "identidad y mirad como se rompe el mapa."
+      ],
+      "T_lidar_imu": [-0.3986, 0.0749, -0.1580, 0.0, 0.0, 0.9240, 0.3823],
+
+      "_nota_ring": "La nube del Ouster simulado trae x,y,z,intensity,ring.",
+      "intensity_field": "intensity",
+      "ring_field": "ring",
+
+      "_nota_tiempos": [
+        "IMPORTANTE: la nube de Gazebo NO trae tiempo por punto (no hay campo",
+        "'t' ni 'time'). GLIM lo detecta solo (autoconf_perpoint_times) y",
+        "desactiva el deskewing: asume que todos los puntos del scan se",
+        "tomaron a la vez. Un LiDAR real si lo trae. Consecuencia practica:",
+        "id despacio (<= 1.5 m/s), porque a velocidad alta la distorsion de",
+        "movimiento que en un robot real se corrige, aqui no existe... pero",
+        "tampoco se simula, asi que el mapa sale MEJOR de lo que saldria en",
+        "el robot de verdad. Es honesto decirselo a los alumnos."
+      ],
+      "autoconf_perpoint_times": true
+    }
+  },
+
+  "config_preprocess.json": {
+    "preprocess": {
+      "_nota": [
+        "Los valores por defecto de GLIM estan pensados para exteriores",
+        "(downsample de 1 m, alcance 100 m). Nuestra arena mide 24x18 m y",
+        "el LiDAR llega a 30 m: con 1 m de rejilla el mapa sale a manchas."
+      ],
+      "distance_near_thresh": 0.5,
+      "distance_far_thresh": 30.0,
+      "downsample_resolution": 0.15,
+      "random_downsample_target": 8000,
+      "num_threads": 4
+    }
+  }
+}
